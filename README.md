@@ -83,10 +83,18 @@ gain is lost.
 `hoisted` is not optional for React Native, because Metro cannot resolve pnpm's symlinked
 virtual store. It is the documented setup for Expo and React Native monorepos.
 
-On a 3582-package hoisted monorepo, a repeat `pnpm install --frozen-lockfile` takes 105 to 138
-seconds on 12.0.0-rc.6, against roughly 6 seconds on 10.33.4, with one
-`pnpm:_broken_node_modules` event per package (3582 of them).
+On a real 3582-package hoisted monorepo (66 workspace projects, 250k files in
+`node_modules`), a repeat `pnpm install --frozen-lockfile` costs:
 
-One caveat on those numbers. On the same large workspace, pnpm 11.22 is also slow (125 to 141
-seconds) even though it passes the repro here, so the large-workspace figure probably includes
-a second factor that is not covered by this repro.
+| pnpm | cold install | repeat install |
+|---|---|---|
+| 10.33.4 | 32 s | 6 s |
+| 11.22.0 | 44 s | 0.5 s |
+| 12.0.0-rc.6 | 65 to 78 s | 105 to 138 s |
+
+pnpm 11 answers in half a second, pnpm 12 in about two minutes, re-importing the tree and
+emitting one `pnpm:_broken_node_modules` event per package (3582 of them).
+
+The cost tracks file count rather than package count, which is why it is much larger than
+this 69-package repro suggests: the repro re-imports 69 packages, the workspace re-imports
+250k files.
