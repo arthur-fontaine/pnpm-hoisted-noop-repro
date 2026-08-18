@@ -1,8 +1,9 @@
 # pnpm 12: `nodeLinker: hoisted` never takes the frozen no-op path in a workspace
 
-A repeat `pnpm install --frozen-lockfile` on an unchanged, freshly installed tree should be
-a no-op. With `nodeLinker: hoisted` **and the dependencies in a workspace member**, pnpm 12
-reports every package broken and re-imports the whole tree, on every install.
+A repeat `pnpm install --frozen-lockfile` on an unchanged tree should hit the no-op
+short-circuit. With `nodeLinker: hoisted`, and the dependencies declared in a workspace
+member rather than the root, pnpm 12 reports every package broken and re-imports the whole
+tree instead, on every install.
 
 ## Run
 
@@ -10,10 +11,10 @@ reports every package broken and re-imports the whole tree, on every install.
 PNPM=pnpm ./run.sh
 ```
 
-One workspace member, one dependency (`express@4.21.2`, 69 packages). The script walks a
-2x2 — dependencies in the root vs in a member, `isolated` vs `hoisted`.
+One workspace member, one dependency (`express@4.21.2`, 69 packages). The script covers four
+cases: dependencies in the root or in a member, crossed with `isolated` and `hoisted`.
 
-## Result — pnpm 12.0.0-rc.6, macOS 15.2 arm64, Node 24.16.0
+## Result: pnpm 12.0.0-rc.6, macOS 15.2 arm64, Node 24.16.0
 
 ```
 pnpm 12.0.0-rc.6
@@ -32,19 +33,19 @@ State of the hoisted tree that was just declared broken:
   .modules.yaml hoistedLocations : mime-types@2.1.35 -> ['node_modules/mime-types']
 ```
 
-Only one of the four cells is affected: **hoisted + deps in a workspace member.** Hoisted
-with the dependencies in the workspace root is fine, so this is not simply "hoisted is
-unsupported by the freshness check".
+Only one of the four cases fails: `hoisted` with the dependencies in a member. `hoisted` with
+the dependencies in the workspace root is fine, so the freshness check is not simply unaware
+of `hoisted`.
 
 ## What's wrong
 
-The tree is correct. `nodeLinker: hoisted` is *supposed* to leave `node_modules/.pnpm/`
-holding nothing but `lock.yaml`, with packages at `node_modules/<name>`. pnpm 10 and pnpm 12
-produce byte-identical trees here.
+The tree is correct. Under `nodeLinker: hoisted`, `node_modules/.pnpm/` is supposed to hold
+nothing but `lock.yaml`, with packages at `node_modules/<name>`. pnpm 10 and pnpm 12 produce
+identical trees here.
 
-The freshness probe asks whether `node_modules/.pnpm/<id>/node_modules/<name>` exists — a
-question that only has meaning for the *isolated* layout. Under hoisted the honest answer is
-"no, and correctly so", and pnpm 12 reads that as damage:
+The freshness probe checks whether `node_modules/.pnpm/<id>/node_modules/<name>` exists. That
+path only means something under the isolated layout. Under `hoisted` it is correctly absent,
+and pnpm 12 reads that absence as damage:
 
 | | pnpm 10.33.4 | pnpm 12.0.0-rc.6 |
 |---|---|---|
@@ -54,34 +55,38 @@ question that only has meaning for the *isolated* layout. Under hoisted the hone
 | `node_modules/serve-static` | exists | exists |
 | repeat `--frozen-lockfile` verdict | `Already up to date` (188 ms) | `Packages: +69` (166 ms) |
 
-`node_modules/.modules.yaml` already records the correct locations and is not consulted:
+`node_modules/.modules.yaml` already records the correct locations, and the probe does not
+read it:
 
 ```json
 "nodeLinker": "hoisted",
 "hoistedLocations": { "mime-types@2.1.35": ["node_modules/mime-types"] }
 ```
 
-This also appears to contradict the design stated in pnpm/pnpm#13151, which introduced the
-probe: *"Under GVS/hoisted linker the probe covers the importer links only."*
+That seems to contradict the design described in pnpm/pnpm#13151, which introduced the probe:
+
+> Under GVS/hoisted linker the probe covers the importer links only.
 
 ## Version comparison
 
-| pnpm | isolated repeat | hoisted repeat (deps in member) |
+| pnpm | isolated repeat | hoisted repeat, deps in member |
 |---|---|---|
-| 10.33.4 | 220 ms | 234 ms — `Already up to date` |
-| 11.22.0 | 219 ms | 215 ms — `Already up to date` |
-| 12.0.0-rc.6 | **31 ms** | **171 ms — re-imports all 69** |
+| 10.33.4 | 220 ms | 234 ms, `Already up to date` |
+| 11.22.0 | 219 ms | 215 ms, `Already up to date` |
+| 12.0.0-rc.6 | 31 ms | 171 ms, re-imports all 69 |
 
-pnpm 12's no-op short-circuit is a real ~7x win on `isolated`. Under hoisted it is
-forfeited.
+On `isolated`, pnpm 12's short-circuit is about 7x faster than pnpm 10. Under `hoisted` that
+gain is lost.
 
 ## Why it matters at scale
 
-`hoisted` is not optional for React Native: Metro cannot resolve pnpm's symlinked virtual
-store, which is why Expo documents `node-linker=hoisted`. On a 3582-package monorepo that
-needs it, a repeat `pnpm install --frozen-lockfile` takes **105-138 s** on 12.0.0-rc.6
-against ~6 s on 10.33.4, emitting one `pnpm:_broken_node_modules` per package (3582 events).
+`hoisted` is not optional for React Native, because Metro cannot resolve pnpm's symlinked
+virtual store. It is the documented setup for Expo and React Native monorepos.
 
-Caveat: on that same large workspace pnpm 11.22 is also slow (125-141 s) even though it is
-unaffected in this repro, so the large-workspace figure likely involves an additional factor
-beyond the bug shown here.
+On a 3582-package hoisted monorepo, a repeat `pnpm install --frozen-lockfile` takes 105 to 138
+seconds on 12.0.0-rc.6, against roughly 6 seconds on 10.33.4, with one
+`pnpm:_broken_node_modules` event per package (3582 of them).
+
+One caveat on those numbers. On the same large workspace, pnpm 11.22 is also slow (125 to 141
+seconds) even though it passes the repro here, so the large-workspace figure probably includes
+a second factor that is not covered by this repro.
