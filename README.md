@@ -69,7 +69,7 @@ probe: *"Under GVS/hoisted linker the probe covers the importer links only."*
 | pnpm | isolated repeat | hoisted repeat (deps in member) |
 |---|---|---|
 | 10.33.4 | 220 ms | 234 ms — `Already up to date` |
-| 11.22.0 | 219 ms | 215 ms — no re-import |
+| 11.22.0 | 219 ms | 215 ms — `Already up to date` |
 | 12.0.0-rc.6 | **31 ms** | **171 ms — re-imports all 69** |
 
 pnpm 12's no-op short-circuit is a real ~7x win on `isolated`. Under hoisted it is
@@ -79,7 +79,9 @@ forfeited.
 
 `hoisted` is not optional for React Native: Metro cannot resolve pnpm's symlinked virtual
 store, which is why Expo documents `node-linker=hoisted`. On a 3582-package monorepo that
-needs it, a repeat `pnpm install --frozen-lockfile` takes **105-138 s** instead of the ~6 s
-pnpm 10 takes, emitting one `pnpm:_broken_node_modules` per package (3582 events). The
-per-package overhead in this 69-package repro is smaller than that, so a large workspace
-likely has an additional factor on top.
+needs it, a repeat `pnpm install --frozen-lockfile` takes **105-138 s** on 12.0.0-rc.6
+against ~6 s on 10.33.4, emitting one `pnpm:_broken_node_modules` per package (3582 events).
+
+Caveat: on that same large workspace pnpm 11.22 is also slow (125-141 s) even though it is
+unaffected in this repro, so the large-workspace figure likely involves an additional factor
+beyond the bug shown here.
