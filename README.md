@@ -2,8 +2,8 @@
 
 A repeat `pnpm install --frozen-lockfile` on an unchanged tree should hit the no-op
 short-circuit. With `nodeLinker: hoisted`, and the dependencies declared in a workspace
-member rather than the root, pnpm 12 reports every package broken and re-imports the whole
-tree instead, on every install.
+member rather than the root, pnpm 12 reports all 69 packages in the lockfile broken and
+re-imports the whole tree instead, on every install.
 
 ## Run
 
@@ -36,6 +36,13 @@ State of the hoisted tree that was just declared broken:
 Only one of the four cases fails: `hoisted` with the dependencies in a member. `hoisted` with
 the dependencies in the workspace root is fine, so the freshness check is not simply unaware
 of `hoisted`.
+
+`--frozen-lockfile` is not required. Plain `pnpm install`, repeated on the same tree:
+
+| | plain `pnpm install`, repeated | `--frozen-lockfile`, repeated |
+|---|---|---|
+| hoisted, deps in member | `Packages: +69`, 69 broken | `Packages: +69`, 69 broken |
+| isolated, deps in member | `Already up to date`, 0 broken | `Already up to date`, 0 broken |
 
 ## What's wrong
 
